@@ -9,9 +9,11 @@ using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using Microsoft.VisualStudio.Shell;
 using CloseTabsToRight.Commands;
+using System.Threading;
+using Task = System.Threading.Tasks.Task;
+using EnvDTE80;
 
-namespace CloseTabsToRight
-{
+namespace CloseTabsToRight {
     /// <summary>
     /// This is the class that implements the package exposed by this assembly.
     /// </summary>
@@ -35,17 +37,16 @@ namespace CloseTabsToRight
     [ProvideMenuResource("Menus.ctmenu", 1)]
     [Guid(PackageGuids.GuidCommandPackageString)]
     [SuppressMessage("StyleCop.CSharp.DocumentationRules", "SA1650:ElementDocumentationMustBeSpelledCorrectly", Justification = "pkgdef, VS and vsixmanifest are valid VS terms")]
-    public sealed class VsPackage : Package
-    {       
+    public sealed class VsPackage : AsyncPackage {
         /// <summary>
         /// Initialization of the package; this method is called right after the package is sited, so this is the place
         /// where you can put all the initialization code that rely on services provided by VisualStudio.
         /// </summary>
-        protected override void Initialize()
-        {
-            CloseTabsToRightCommand.Initialize(this);
-            base.Initialize();
-            CloseTabsToLeftCommand.Initialize(this);
+        protected override async Task InitializeAsync(CancellationToken cancellationToken, IProgress<ServiceProgressData> progress) {
+            var dte = await GetServiceAsync(typeof(EnvDTE.DTE)) as DTE2;
+            await CloseTabsToRightCommand.InitializeAsync(this, dte);
+            await base.InitializeAsync(cancellationToken, progress);
+            await CloseTabsToLeftCommand.InitializeAsync(this, dte);
         }
     }
 }

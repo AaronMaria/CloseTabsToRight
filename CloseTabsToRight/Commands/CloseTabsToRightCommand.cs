@@ -9,72 +9,38 @@ using Microsoft.VisualStudio.Platform.WindowManagement;
 using Microsoft.VisualStudio.PlatformUI.Shell;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
+using System.Threading;
+using Task = System.Threading.Tasks.Task;
 using static CloseTabsToRight.Helpers.WindowFrameHelpers;
 using static CloseTabsToRight.Helpers.DocumentHelpers;
 
-namespace CloseTabsToRight.Commands
-{
+namespace CloseTabsToRight.Commands {
     /// <summary>
     /// Command handler
     /// </summary>
-    internal sealed class CloseTabsToRightCommand
-    {
-        /// <summary>
-        /// VS Package that provides this command, not null.
-        /// </summary>
-        private readonly Package _package;
-
-        private readonly DTE2 _dte;
-
-        /// <summary>
-        /// Initializes a new instance of the <see cref="CloseTabsToRightCommand"/> class.
-        /// Adds our command handlers for menu (commands must exist in the command table file)
-        /// </summary>
-        /// <param name="package">Owner package, not null.</param>
-        private CloseTabsToRightCommand(Package package)
-        {
-            if (package == null)
-            {
-                throw new ArgumentNullException(nameof(package));
-            }
-
-            _package = package;
-            _dte = ServiceProvider.GetService(typeof(DTE)) as DTE2;
-
-            if (ServiceProvider.GetService(typeof(IMenuCommandService)) is OleMenuCommandService commandService)
-            {
-                var id = new CommandID(PackageGuids.GuidCommandPackageCmdSet, PackageIds.CloseTabsToRightCommandId);
-                var command = new OleMenuCommand(CommandCallback, id);
-                //command.BeforeQueryStatus += BeforeQueryStatus;
-                commandService.AddCommand(command);
-            }
-        }
-
-        /// <summary>
-        /// Gets the instance of the command.
-        /// </summary>
-        public static CloseTabsToRightCommand Instance { get; private set; }
-
-        /// <summary>
-        /// Gets the service provider from the owner package.
-        /// </summary>
-        private IServiceProvider ServiceProvider => _package;
-
+    internal sealed class CloseTabsToRightCommand {
         /// <summary>
         /// Initializes the singleton instance of the command.
         /// </summary>
         /// <param name="package">Owner package, not null.</param>
-        public static void Initialize(Package package)
-        {
-            Instance = new CloseTabsToRightCommand(package);
+        public static async Task InitializeAsync(AsyncPackage package, DTE2 dte) {
+            if (package == null) {
+                throw new ArgumentNullException(nameof(package));
+            }
+            var commandService = (IMenuCommandService)await package.GetServiceAsync(typeof(IMenuCommandService));
+            if (commandService is OleMenuCommandService) {
+                var id = new CommandID(PackageGuids.GuidCommandPackageCmdSet, PackageIds.CloseTabsToRightCommandId);
+                var command = new OleMenuCommand((s, e) => CloseTabsToRight(package, dte), id);
+                command.BeforeQueryStatus += (sender, e) => BeforeQueryStatus(sender, e, package, dte);
+                commandService.AddCommand(command);
+            }
         }
 
-        private void BeforeQueryStatus(object sender, EventArgs e)
-        {
+        private static void BeforeQueryStatus(object sender, EventArgs e, AsyncPackage package, DTE2 dte) {
             var button = (OleMenuCommand)sender;
 
-            var vsWindowFrames = GetVsWindowFrames(ServiceProvider).ToList();
-            var activeFrame = GetActiveWindowFrame(vsWindowFrames, _dte);
+            var vsWindowFrames = GetVsWindowFrames(package).ToList();
+            var activeFrame = GetActiveWindowFrame(vsWindowFrames, dte);
             var docGroup = GetDocumentGroup(activeFrame);
 
             var docViewsToRight = GetDocumentViewsToRight(activeFrame, docGroup);
@@ -82,26 +48,13 @@ namespace CloseTabsToRight.Commands
             button.Enabled = docViewsToRight.Any();
         }
 
-        /// <summary>
-        /// This function is the callback used to execute the command when the menu item is clicked.
-        /// See the constructor to see how the menu item is associated with this function using
-        /// OleMenuCommandService service and MenuCommand class.
-        /// </summary>
-        /// <param name="sender">Event sender.</param>
-        /// <param name="e">Event args.</param>
-        private void CommandCallback(object sender, EventArgs e)
-        {
-            CloseTabsToRight();
-        }
-
-        private void CloseTabsToRight()
-        {
-            var vsWindowFrames = GetVsWindowFrames(ServiceProvider).ToList();
+        private static void CloseTabsToRight(AsyncPackage package, DTE2 dte) {
+            var vsWindowFrames = GetVsWindowFrames(package).ToList();
             var windowFrames = vsWindowFrames.Select(vsWindowFrame => vsWindowFrame as WindowFrame);
-            var activeFrame = GetActiveWindowFrame(vsWindowFrames, _dte);
+            var activeFrame = GetActiveWindowFrame(vsWindowFrames, dte);
 
             var windowFrame = activeFrame;
-            if (windowFrame == null)
+            if(windowFrame == null)
                 return;
 
             var windowFramesDict = windowFrames.ToDictionary(frame => frame.FrameMoniker.ViewMoniker);
@@ -111,12 +64,9 @@ namespace CloseTabsToRight.Commands
 
             var framesToClose = new List<WindowFrame>();
             var foundActive = false;
-            foreach (var name in documentViews.Select(documentView => CleanDocumentViewName(documentView.Name)))
-            {
-                if (!foundActive)
-                {
-                    if (name == viewMoniker)
-                    {
+            foreach(var name in documentViews.Select(documentView => CleanDocumentViewName(documentView.Name))) {
+                if(!foundActive) {
+                    if(name == viewMoniker) {
                         foundActive = true;
 
                     }
@@ -126,30 +76,25 @@ namespace CloseTabsToRight.Commands
                 }
 
                 var frame = windowFramesDict[name];
-                if (frame != null)
+                if(frame != null)
                     framesToClose.Add(frame);
             }
 
-            foreach (var frame in framesToClose)
-            {
+            foreach(var frame in framesToClose) {
                 frame.CloseFrame(__FRAMECLOSE.FRAMECLOSE_PromptSave);
             }
         }
 
-        private IEnumerable<DocumentView> GetDocumentViewsToRight(WindowFrame activeWindowFrame, DocumentGroup docGroup)
-        {
+        private static IEnumerable<DocumentView> GetDocumentViewsToRight(WindowFrame activeWindowFrame, DocumentGroup docGroup) {
             var docViewsToRight = new List<DocumentView>();
             var viewMoniker = activeWindowFrame.FrameMoniker.ViewMoniker;
             var documentViews = docGroup.Children.Where(c => c != null && c.GetType() == typeof(DocumentView)).Select(c => c as DocumentView);
             var foundActive = false;
 
-            foreach (var documentView in documentViews)
-            {
+            foreach(var documentView in documentViews) {
                 var name = CleanDocumentViewName(documentView.Name);
-                if (!foundActive)
-                {
-                    if (name == viewMoniker)
-                    {
+                if(!foundActive) {
+                    if(name == viewMoniker) {
                         foundActive = true;
 
                     }

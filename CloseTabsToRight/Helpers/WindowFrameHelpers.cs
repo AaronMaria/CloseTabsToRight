@@ -6,6 +6,7 @@ using EnvDTE80;
 using Microsoft.VisualStudio;
 using Microsoft.VisualStudio.Platform.WindowManagement;
 using Microsoft.VisualStudio.PlatformUI.Shell;
+using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
 
 namespace CloseTabsToRight.Helpers
@@ -30,14 +31,15 @@ namespace CloseTabsToRight.Helpers
             return window as Window;
         }
 
-        public static IEnumerable<IVsWindowFrame> GetVsWindowFrames(IServiceProvider serviceProvider)
+        public static IEnumerable<IVsWindowFrame> GetVsWindowFrames(AsyncPackage serviceProvider)
         {
             if(serviceProvider == null)
                 throw new ArgumentNullException(nameof(serviceProvider));
 
             var windowFrames = new List<IVsWindowFrame>();
 
-            if (!(serviceProvider.GetService(typeof(SVsUIShell)) is IVsUIShell uiShell))
+            ThreadHelper.ThrowIfNotOnUIThread();
+            if (!(ServiceProvider.GlobalProvider.GetService(typeof(SVsUIShell)) is IVsUIShell uiShell))
             {
                 return Enumerable.Empty<IVsWindowFrame>();
             }
